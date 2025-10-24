@@ -1,0 +1,7 @@
+pydantic-ai==0.0.14
+pydantic==2.10.6
+openai==1.59.8
+python-dotenv==1.0.1
+pandas
+matplotlib
+jupyter
