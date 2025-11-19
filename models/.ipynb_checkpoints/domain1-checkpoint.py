@@ -2,6 +2,7 @@
 Domain 1: Demographics & Vulnerability Factors
 Purpose: Identify vulnerable populations requiring targeted assessment
 """
+import re
 from pydantic import BaseModel, Field, field_validator
 from typing import List, Any, Dict
 from enum import Enum
@@ -71,20 +72,53 @@ class CaregiverType(str, Enum):
             "both parents": CaregiverType.BOTH_PARENTS,
             "two parents": CaregiverType.BOTH_PARENTS,
             "parents": CaregiverType.BOTH_PARENTS,
-            "mother": CaregiverType.BOTH_PARENTS,
-            "father": CaregiverType.BOTH_PARENTS,
-            "single mother": CaregiverType.SINGLE_MOTHER,
+            
+            "mother": CaregiverType.SINGLE_MOTHER,
+            "mom": CaregiverType.SINGLE_MOTHER,
             "mother only": CaregiverType.SINGLE_MOTHER,
-            "single father": CaregiverType.SINGLE_FATHER,
+            "single mother": CaregiverType.SINGLE_MOTHER,
+            
+            "father": CaregiverType.SINGLE_FATHER,
+            "dad": CaregiverType.SINGLE_FATHER,
             "father only": CaregiverType.SINGLE_FATHER,
+            "single father": CaregiverType.SINGLE_FATHER,
+            
             "grandparent": CaregiverType.GRANDPARENT,
-            "grandma": CaregiverType.GRANDPARENT,
-            "grandpa": CaregiverType.GRANDPARENT,
             "other relative": CaregiverType.OTHER_RELATIVE,
             "relative": CaregiverType.OTHER_RELATIVE,
+            
             "other": CaregiverType.OTHER,
         }
-        return mapping.get(v, CaregiverType.OTHER)
+
+        # Exact match
+        if v in mapping:
+            return mapping[v]
+
+        # Grandma / grandpa = SINGLE relative caregiver → OTHER_RELATIVE
+        if "grandma" in v:
+            return CaregiverType.OTHER_RELATIVE
+        if "grandpa" in v:
+            return CaregiverType.OTHER_RELATIVE
+
+        # Minimal fuzzy rules
+        if "grandparent" in v:
+            return CaregiverType.GRANDPARENT
+            
+        if "parents" in v:
+            return CaregiverType.BOTH_PARENTS
+        
+        if "single mother" in v:
+            return CaregiverType.SINGLE_MOTHER
+        if "single father" in v:
+            return CaregiverType.SINGLE_FATHER
+        if "mother" in v or "mom" in v:
+            return CaregiverType.SINGLE_MOTHER
+        if "father" in v or "dad" in v:
+            return CaregiverType.SINGLE_FATHER
+        if "relative" in v:
+            return CaregiverType.OTHER_RELATIVE
+        
+        return CaregiverType.OTHER
 
 
 # ---------- small parsing helpers ----------
@@ -205,17 +239,59 @@ class Domain1Data(BaseModel):
           - If strict_len=False (default): will trim/pad children list to match N before constructing
           - If strict_len=True: rely on the validator (raises if len != N)
         """
-        n = _to_int(answers.get("num_children_under_5", answers.get("num_children", 0)), 0)
 
-        # build children
+        raw_n = answers.get("num_children_under_5", answers.get("num_children", 0))
+        n_explicit = _to_int(raw_n, 0)
+        if n_explicit < 0:
+            n_explicit = 0
+
+        max_index = 0
+        for key in answers.keys():
+            # child{i}_age / child{i}_malnutrition / child{i}_malnourished / child{i}_mal / child{i}_is_malnourished
+            m = re.match(r"child(\d+)_(age|malnutrition|malnourished|mal|is_malnourished)", key)
+            if m:
+                idx = int(m.group(1))
+                if idx > max_index:
+                    max_index = idx
+
+            # age_child{i}
+            m2 = re.match(r"age_child(\d+)", key)
+            if m2:
+                idx = int(m2.group(1))
+                if idx > max_index:
+                    max_index = idx
+
+        n_inferred = max_index
+
+        if n_explicit > 0:
+            n = n_explicit
+        else:
+            n = n_inferred
+
+        if n < 0:
+            n = 0
+
         children: List[ChildInfo] = []
         for i in range(1, max(n, 0) + 1):
-            age = _to_int(answers.get(f"child{i}_age", answers.get(f"age_child{i}", 0)), 0)
+            age = _to_int(
+                answers.get(
+                    f"child{i}_age",
+                    answers.get(f"age_child{i}", 0)
+                ),
+                0
+            )
             mal = _to_bool(
-                answers.get(f"child{i}_malnutrition",
-                            answers.get(f"child{i}_malnourished",
-                                        answers.get(f"child{i}_mal",
-                                                    answers.get(f"child{i}_is_malnourished", False)))))
+                answers.get(
+                    f"child{i}_malnutrition",
+                    answers.get(
+                        f"child{i}_malnourished",
+                        answers.get(
+                            f"child{i}_mal",
+                            answers.get(f"child{i}_is_malnourished", False)
+                        )
+                    )
+                )
+            )
             children.append(ChildInfo(age_months=age, has_malnutrition_signs=mal))
 
         if not strict_len:
@@ -226,7 +302,9 @@ class Domain1Data(BaseModel):
 
         has_elderly = _to_bool(answers.get("has_elderly_members", answers.get("elderly", False)))
         has_immuno = _to_bool(answers.get("has_immunocompromised_members", answers.get("immunocompromised", False)))
-        caregiver = CaregiverType.from_string(answers.get("primary_caregiver", answers.get("caregiver", "Other")))
+        caregiver = CaregiverType.from_string(
+            answers.get("primary_caregiver", answers.get("caregiver", "Other"))
+        )
 
         return cls(
             num_children_under_5=n,
