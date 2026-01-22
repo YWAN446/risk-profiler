@@ -63,63 +63,25 @@ class CaregiverType(str, Enum):
     GRANDPARENT = "Grandparent"
     OTHER_RELATIVE = "Other relative"
     OTHER = "Other"
+    UNKNOWN = "Unknown"
 
     @staticmethod
-    def from_string(s: Any) -> "CaregiverType":
-        """Robust mapping from free text to enum"""
-        v = str(s or "").strip().lower()
+    def from_llm_value(v: Any) -> "CaregiverType":
+        """
+        Map LLM extracted caregiver string (human-readable) to enum safely.
+        Accepts values like "Single mother" / "Both parents" / "Unknown".
+        """
+        s = str(v or "").strip()
         mapping = {
-            "both parents": CaregiverType.BOTH_PARENTS,
-            "two parents": CaregiverType.BOTH_PARENTS,
-            "parents": CaregiverType.BOTH_PARENTS,
-            
-            "mother": CaregiverType.SINGLE_MOTHER,
-            "mom": CaregiverType.SINGLE_MOTHER,
-            "mother only": CaregiverType.SINGLE_MOTHER,
-            "single mother": CaregiverType.SINGLE_MOTHER,
-            
-            "father": CaregiverType.SINGLE_FATHER,
-            "dad": CaregiverType.SINGLE_FATHER,
-            "father only": CaregiverType.SINGLE_FATHER,
-            "single father": CaregiverType.SINGLE_FATHER,
-            
-            "grandparent": CaregiverType.GRANDPARENT,
-            "other relative": CaregiverType.OTHER_RELATIVE,
-            "relative": CaregiverType.OTHER_RELATIVE,
-            
-            "other": CaregiverType.OTHER,
+            "Both parents": CaregiverType.BOTH_PARENTS,
+            "Single mother": CaregiverType.SINGLE_MOTHER,
+            "Single father": CaregiverType.SINGLE_FATHER,
+            "Grandparent": CaregiverType.GRANDPARENT,
+            "Other relative": CaregiverType.OTHER_RELATIVE,
+            "Other": CaregiverType.OTHER,
+            "Unknown": CaregiverType.UNKNOWN,
         }
-
-        # Exact match
-        if v in mapping:
-            return mapping[v]
-
-        # Grandma / grandpa = SINGLE relative caregiver → OTHER_RELATIVE
-        if "grandma" in v:
-            return CaregiverType.OTHER_RELATIVE
-        if "grandpa" in v:
-            return CaregiverType.OTHER_RELATIVE
-
-        # Minimal fuzzy rules
-        if "grandparent" in v:
-            return CaregiverType.GRANDPARENT
-            
-        if "parents" in v:
-            return CaregiverType.BOTH_PARENTS
-        
-        if "single mother" in v:
-            return CaregiverType.SINGLE_MOTHER
-        if "single father" in v:
-            return CaregiverType.SINGLE_FATHER
-        if "mother" in v or "mom" in v:
-            return CaregiverType.SINGLE_MOTHER
-        if "father" in v or "dad" in v:
-            return CaregiverType.SINGLE_FATHER
-        if "relative" in v:
-            return CaregiverType.OTHER_RELATIVE
-        
-        return CaregiverType.OTHER
-
+        return mapping.get(s, CaregiverType.UNKNOWN)
 
 # ---------- small parsing helpers ----------
 def _to_int(x: Any, default: int = 0) -> int:
@@ -302,8 +264,8 @@ class Domain1Data(BaseModel):
 
         has_elderly = _to_bool(answers.get("has_elderly_members", answers.get("elderly", False)))
         has_immuno = _to_bool(answers.get("has_immunocompromised_members", answers.get("immunocompromised", False)))
-        caregiver = CaregiverType.from_string(
-            answers.get("primary_caregiver", answers.get("caregiver", "Other"))
+        caregiver = CaregiverType.from_llm_value(
+            answers.get("primary_caregiver", answers.get("caregiver", "Unknown"))
         )
 
         return cls(

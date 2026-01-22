@@ -61,6 +61,7 @@ def get_extraction_agent() -> Agent:
     return Agent(
         'openai:gpt-4o',
         output_type=dict,
+        model_settings={"temperature": 0},
         system_prompt="""You are a data extraction specialist.
 
 TASK:
@@ -72,14 +73,23 @@ From the conversation transcript, produce a SINGLE flat JSON object with keys:
   - "child{i}_malnutrition": boolean (true/false)
 - "has_elderly_members": boolean
 - "has_immunocompromised_members": boolean
-- "primary_caregiver": one of: "Both parents", "Single mother", "Single father", "Grandparent", "Other relative", "Other"
+- "primary_caregiver": one of:
+  "Both parents", "Single mother", "Single father",
+  "Grandparent", "Other relative", "Other", "Unknown"
 
 IMPORTANT:
-- Only extract information explicitly stated in the transcript. If unknown, omit the key.
-- Normalize yes/no to true/false where possible.
-- If the respondent says 'No second child', OMIT child2_* keys.
+- Only extract information explicitly stated in the transcript.
+- If unknown/unclear, set "primary_caregiver" to "Unknown" (do NOT guess).
+- "Parents live together" does NOT imply "Both parents" as primary caregiver.
+- Use "Both parents" ONLY if the respondent clearly indicates shared caregiving
+  (e.g., "both parents take care", "equally", "shared").
+- If the respondent says mother mainly/primarily takes care, use "Single mother".
+- If the respondent says father mainly/primarily takes care, use "Single father".
+- If the respondent says grandmother/grandparent takes care, use "Grandparent".
+- If the respondent says aunt/uncle/relative takes care, use "Other relative".
 - If Q6 mentions elderly and/or immunocompromised, set those booleans accordingly.
-- Map caregiver phrases: 'mother only' -> "Single mother" if clearly single; otherwise 'mother' -> "Both parents".
+- If the respondent says 'No second child', OMIT child2_* keys.
+- If a key is unknown (except caregiver), you may omit it.
 
 CRITICAL:
 You MUST return the result by CALLING the built-in tool named `response` with a single argument `response` set to your JSON object.
