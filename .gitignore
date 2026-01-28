@@ -19,7 +19,7 @@ survey_results/
 .idea/
 *.swp
 *.swo
-.ipynb_checkpoints/
+**/.ipynb_checkpoints/
 
 # OS
 .DS_Store
