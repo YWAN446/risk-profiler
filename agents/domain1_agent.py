@@ -5,6 +5,7 @@ from pydantic_ai import Agent, RunContext
 from pydantic import BaseModel
 from pydantic import Field
 from typing import Optional
+from pathlib import Path
 import sys
 import os
 
@@ -12,6 +13,27 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from models.domain1 import Domain1Data, ChildInfo, CaregiverType
+
+# Path to prompts directory
+PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
+
+
+def load_prompt(filename: str) -> str:
+    """Load a prompt from a markdown file"""
+    prompt_path = PROMPTS_DIR / filename
+    return prompt_path.read_text(encoding="utf-8")
+
+
+def get_conversation_system_prompt() -> str:
+    """Build the full conversation system prompt from components"""
+    base_prompt = load_prompt("conversation_system_prompt.md")
+    questions = load_prompt("survey_questions.md")
+    return f"{base_prompt}\n\n{questions}"
+
+
+def get_extraction_system_prompt() -> str:
+    """Load the extraction system prompt"""
+    return load_prompt("extraction_system_prompt.md")
 
 
 class Domain1SurveyDeps(BaseModel):
@@ -28,31 +50,7 @@ def get_conversation_agent() -> Agent:
     return Agent(
         'openai:gpt-4o',
         deps_type=Domain1SurveyDeps,
-        system_prompt="""You are a compassionate and professional survey interviewer collecting information about household demographics and vulnerability factors.
-
-You MUST ask the respondent EXACTLY the following six questions, in this order, using the exact wording inside the quotation marks:
-
-Q1: "How many children under five years old live in your household?"
-Q2: "Please tell me the age in months of the first child under five."
-Q3: "Has the first child shown signs of malnutrition, like weight loss or not growing well?"
-Q4: "Please tell me the age in months of the second child under five. If there is no second child, say 'No second child'."
-Q5: "Has the second child shown signs of malnutrition, like weight loss or not growing well? If there is no second child, say 'No second child'."
-Q6: "Are there any elderly or immunocompromised members in your household, and who mainly takes care of the small children during the day?"
-
-CRITICAL RULES:
-- Start with a very short greeting (one sentence), then immediately ask Q1.
-- Ask ONE question at a time and wait for the respondent's answer.
-- If the respondent reports N children under five, only ask the age/malnutrition pair for those N children (N can be 0, 1, or 2 in this short form). If fewer than two children, accept 'No second child' for the extra child-specific questions.
-- Use simple, clear language suitable for low-literacy settings. You may give brief clarification if the respondent seems confused, but the question sentences themselves MUST stay exactly as written above.
-- Do NOT ask any extra questions beyond these six.
-- After you have asked all six questions and received answers, reply with exactly:
-
-  SURVEY_COMPLETE
-
-  (in all caps, no additional text).
-
-Do NOT say SURVEY_COMPLETE until all six questions have been answered.
-""",
+        system_prompt=get_conversation_system_prompt(),
     )
 
 
@@ -62,39 +60,7 @@ def get_extraction_agent() -> Agent:
         'openai:gpt-4o',
         output_type=dict,
         model_settings={"temperature": 0},
-        system_prompt="""You are a data extraction specialist.
-
-TASK:
-From the conversation transcript, produce a SINGLE flat JSON object with keys:
-
-- "num_children_under_5": integer
-- For each child i starting from 1 in order (only up to the number given):
-  - "child{i}_age": integer (months)
-  - "child{i}_malnutrition": boolean (true/false)
-- "has_elderly_members": boolean
-- "has_immunocompromised_members": boolean
-- "primary_caregiver": one of:
-  "Both parents", "Single mother", "Single father",
-  "Grandparent", "Other relative", "Other", "Unknown"
-
-IMPORTANT:
-- Only extract information explicitly stated in the transcript.
-- If unknown/unclear, set "primary_caregiver" to "Unknown" (do NOT guess).
-- "Parents live together" does NOT imply "Both parents" as primary caregiver.
-- Use "Both parents" ONLY if the respondent clearly indicates shared caregiving
-  (e.g., "both parents take care", "equally", "shared").
-- If the respondent says mother mainly/primarily takes care, use "Single mother".
-- If the respondent says father mainly/primarily takes care, use "Single father".
-- If the respondent says grandmother/grandparent takes care, use "Grandparent".
-- If the respondent says aunt/uncle/relative takes care, use "Other relative".
-- If Q6 mentions elderly and/or immunocompromised, set those booleans accordingly.
-- If the respondent says 'No second child', OMIT child2_* keys.
-- If a key is unknown (except caregiver), you may omit it.
-
-CRITICAL:
-You MUST return the result by CALLING the built-in tool named `response` with a single argument `response` set to your JSON object.
-Do NOT print text. Do NOT wrap in markdown. Do NOT include any other fields.
-""",
+        system_prompt=get_extraction_system_prompt(),
     )
 
 
