@@ -4,7 +4,7 @@ Purpose: Identify vulnerable populations requiring targeted assessment
 """
 import re
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -86,6 +86,18 @@ class CaregiverType(str, Enum):
             "Unknown": CaregiverType.UNKNOWN,
         }
         return mapping.get(s, CaregiverType.UNKNOWN)
+
+
+class Domain1SurveyDeps(BaseModel):
+    """Dependencies for the Domain 1 survey agent"""
+    conversation_history: list[str] = Field(default_factory=list)
+
+
+class ValidationDecision(BaseModel):
+    """Validation result for survey answers"""
+    status: Literal["OK", "NEED_FOLLOWUP", "GIVE_UP"]
+    followup: Optional[str] = None
+    note: Optional[str] = None
 
 
 # ---------- small parsing helpers ----------

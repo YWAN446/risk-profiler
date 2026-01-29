@@ -48,14 +48,16 @@ python main.py
 risk-profiler/
 ├── app.py                  # Gradio web interface
 ├── main.py                 # Command-line interface
+├── util.py                 # Utility functions (prompt loading, text parsing)
 ├── agents/
-│   └── domain1_agent.py    # Pydantic AI agents (conversation & extraction)
+│   └── domain1_agent.py    # Pydantic AI agents (conversation, extraction, validation)
 ├── models/
-│   └── domain1.py          # Pydantic data models with risk scoring
+│   └── domain1.py          # Pydantic data models, enums, and risk scoring
 ├── prompts/
 │   ├── conversation_system_prompt.md   # Survey agent behavior & guidelines
 │   ├── survey_questions.md             # The 6 survey questions
-│   └── extraction_system_prompt.md     # Data extraction agent instructions
+│   ├── extraction_system_prompt.md     # Data extraction agent instructions
+│   └── validation_system_prompt.md     # Answer validation agent instructions
 ├── survey_results/         # Auto-saved JSON survey results
 ├── requirements.txt
 └── .env.example
@@ -66,8 +68,9 @@ risk-profiler/
 Survey prompts are stored as markdown files in the `prompts/` directory for easy editing:
 
 - **conversation_system_prompt.md** - Defines the agent's tone, interaction style, and survey administration rules
-- **survey_questions.md** - Contains the exact wording for all survey questions
+- **survey_questions.md** - Contains the exact wording for all survey questions (parsed at runtime)
 - **extraction_system_prompt.md** - Instructions for extracting structured data from conversations
+- **validation_system_prompt.md** - Rules for validating answers and generating follow-up questions
 
 ## Risk Scoring
 
