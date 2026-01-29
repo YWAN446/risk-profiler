@@ -34,7 +34,7 @@ class SurveySession:
             "Start the survey by greeting the respondent and then ask Q1.",
             deps=self.deps,
         )
-        agent_response = str(result.output)
+        agent_response = result.response.text
         self.deps.conversation_history.append(f"Agent: {agent_response}")
         return agent_response
 
@@ -61,7 +61,7 @@ class SurveySession:
         - If all six questions are answered, reply with SURVEY_COMPLETE (exactly)."""
 
         result = await self.conversation_agent.run(next_step_prompt, deps=self.deps)
-        agent_response = str(result.output)
+        agent_response = result.response.text
         self.deps.conversation_history.append(f"Agent: {agent_response}")
 
         # Check if survey is complete
@@ -79,7 +79,7 @@ class SurveySession:
         extraction_result = await extraction_agent.run(
             f"Extract the household data from this conversation:\n\n{conversation_text}"
         )
-        answers = extraction_result.output or {}
+        answers = extraction_result.response or {}
         self.result_data = Domain1Data.from_answers(answers, strict_len=False)
 
         # Save results

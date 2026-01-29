@@ -115,7 +115,7 @@ async def run_domain1_survey() -> Optional[Domain1Data]:
             f"respondent_answer: {user_input}\n"
             f"followup_used: {str(followup_used[q_idx]).lower()}"
         )
-        decision: ValidationDecision = vd.output
+        decision: ValidationDecision = vd.response
 
         if decision.status == "NEED_FOLLOWUP":
             followup_used[q_idx] = True
@@ -156,7 +156,7 @@ async def run_domain1_survey() -> Optional[Domain1Data]:
     extraction_result = await extraction_agent.run(
         f"Extract the household data from this conversation:\n\n{conversation_text}"
     )
-    answers = extraction_result.output or {}
+    answers = extraction_result.response or {}
     return Domain1Data.from_answers(answers, strict_len=False)
 
 

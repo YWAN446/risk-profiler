@@ -37,17 +37,17 @@ User: I'm a single mother
 
     print("\nExtracted Data:")
     print("="*60)
-    print(type(result.output))
-    print(result.output)
+    print(type(result.response))
+    print(result.response)
 
-    if isinstance(result.output, Domain1Data):
+    if isinstance(result.response, Domain1Data):
         print("\n✅ Successfully extracted Domain1Data!")
-        print(f"Number of children: {result.output.num_children_under_5}")
-        print(f"Children details: {result.output.children}")
-        print(f"Elderly members: {result.output.has_elderly_members}")
-        print(f"Primary caregiver: {result.output.primary_caregiver}")
+        print(f"Number of children: {result.response.num_children_under_5}")
+        print(f"Children details: {result.response.children}")
+        print(f"Elderly members: {result.response.has_elderly_members}")
+        print(f"Primary caregiver: {result.response.primary_caregiver}")
     else:
-        print(f"\n❌ Got unexpected type: {type(result.output)}")
+        print(f"\n❌ Got unexpected type: {type(result.response)}")
 
 if __name__ == "__main__":
     asyncio.run(test_extraction())

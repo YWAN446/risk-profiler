@@ -1,8 +1,8 @@
-pydantic-ai==0.0.14
-pydantic==2.10.6
-openai==1.59.8
-python-dotenv==1.0.1
+pydantic-ai>=1.48.0
+pydantic>=2.12.0
+openai>=2.14.0
+python-dotenv>=1.2.0
 pandas
 matplotlib
 jupyter
-gradio>=4.0.0
+gradio>=6.4.0
