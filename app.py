@@ -7,6 +7,7 @@ from pathlib import Path
 from datetime import datetime
 from dotenv import load_dotenv
 import gradio as gr
+import re
 
 from agents.domain1_agent import (
     get_conversation_agent,
@@ -76,13 +77,18 @@ class SurveySession:
         """Extract structured data from conversation"""
         extraction_agent = get_extraction_agent()
         conversation_text = "\n".join(self.deps.conversation_history)
-        extraction_result = await extraction_agent.run(
+    
+        result = await extraction_agent.run(
             f"Extract the household data from this conversation:\n\n{conversation_text}"
         )
-        answers = extraction_result.response or {}
-        self.result_data = Domain1Data.from_answers(answers, strict_len=False)
-
-        # Save results
+        
+        answers: dict = result.output or {}
+    
+        self.result_data = Domain1Data.from_answers(
+            answers,
+            strict_len=False
+        )
+    
         self._save_results()
 
     def _save_results(self):

@@ -140,11 +140,17 @@ class Domain1Data(BaseModel):
     )
     children: List[ChildInfo] = Field(default_factory=list, description="Details of each child")
 
-    # Vulnerable household members
-    has_elderly_members: Optional[bool] = Field(None, description="Are there elderly household members?")
+    # Vulnerable household members (Q6 in the NEW prompt)
+    has_vulnerable_members: Optional[bool] = Field(
+        None,
+        description="Are there any elderly or immunocompromised members in the household?"
+    )
+    
+    # Backward-compatible legacy fields (can still be populated by older extractors)
+    has_elderly_members: Optional[bool] = Field(None, description="(legacy) Are there elderly household members?")
     has_immunocompromised_members: Optional[bool] = Field(
         None,
-        description="Are there immunocompromised or chronically ill members?"
+        description="(legacy) Are there immunocompromised or chronically ill members?"
     )
 
     # Caregiver information
@@ -172,10 +178,13 @@ class Domain1Data(BaseModel):
         if self.primary_caregiver in (CaregiverType.SINGLE_MOTHER, CaregiverType.SINGLE_FATHER):
             household_multiplier *= 1.15
 
-        # Elderly or immunocompromised members increase vulnerability only if explicitly True
-        if self.has_elderly_members is True:
-            household_multiplier *= 1.10
-        if self.has_immunocompromised_members is True:
+        # Vulnerable members increase vulnerability (new Q6 is a combined question)
+        has_vuln = self.has_vulnerable_members
+        if has_vuln is None:
+            # fallback to legacy fields if new field is missing
+            has_vuln = (self.has_elderly_members is True) or (self.has_immunocompromised_members is True)
+
+        if has_vuln is True:
             household_multiplier *= 1.10
 
         return round(avg_child_score * household_multiplier, 2)
@@ -200,7 +209,11 @@ class Domain1Data(BaseModel):
             )
         ]
 
-        vulnerable_members_present = (self.has_elderly_members is True) or (self.has_immunocompromised_members is True)
+        vulnerable_members_present = (
+            self.has_vulnerable_members is True
+            or self.has_elderly_members is True
+            or self.has_immunocompromised_members is True
+        )
 
         return {
             "domain": "Demographics & Vulnerability Factors",
@@ -290,15 +303,34 @@ class Domain1Data(BaseModel):
                     f"Number of children details ({len(children)}) must match num_children_under_5 ({n})"
                 )
 
+        # --- NEW combined vulnerability field (preferred) ---
+        has_vulnerable = _to_bool_or_none(
+            answers.get(
+                "has_vulnerable_members",
+                answers.get(
+                    "vulnerable_members_present",
+                    answers.get("vulnerable_members")  # extra alias
+                )
+            )
+        )
+        
+        # --- legacy fields (still supported) ---
         has_elderly = _to_bool_or_none(answers.get("has_elderly_members", answers.get("elderly")))
         has_immuno = _to_bool_or_none(answers.get("has_immunocompromised_members", answers.get("immunocompromised")))
+        
+        # If we only have the combined answer, backfill legacy fields for compatibility
+        if has_vulnerable is True and has_elderly is None and has_immuno is None:
+            # cannot distinguish; set a conservative default:
+            has_elderly = True
+        
         caregiver = CaregiverType.from_llm_value(
             answers.get("primary_caregiver", answers.get("caregiver", "Unknown"))
         )
-
+        
         return cls(
             num_children_under_5=n,
             children=children,
+            has_vulnerable_members=has_vulnerable,
             has_elderly_members=has_elderly,
             has_immunocompromised_members=has_immuno,
             primary_caregiver=caregiver,

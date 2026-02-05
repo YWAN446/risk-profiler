@@ -17,5 +17,8 @@ The following questions must be asked in order, using the exact wording provided
 ## Q5: Second Child Malnutrition
 "Has the second child shown signs of malnutrition, like weight loss or not growing well? If there is no second child, say 'No second child'."
 
-## Q6: Household Members and Caregiver
-"Are there any elderly or immunocompromised members in your household, and who mainly takes care of the small children during the day?"
+## Q6: Household Members
+"Are there any elderly or immunocompromised members in your household?"
+
+## Q7: Caregiver
+"Who mainly takes care of the small children during the day?"
