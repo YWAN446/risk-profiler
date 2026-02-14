@@ -22,6 +22,8 @@ from util import (
 # Load questions from external file
 QUESTIONS = load_questions()
 
+assert len(QUESTIONS) == 7, f"Expected 7 questions, got {len(QUESTIONS)}"
+
 
 def get_conversation_agent() -> Agent:
     """Get the conversational agent (returns text, not structured data)"""
