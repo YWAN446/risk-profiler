@@ -1,24 +1,31 @@
 # Domain 1 Survey Questions
 
-The following questions must be asked in order, using the exact wording provided:
+The following questions must be asked in order.
+
+After Q1, repeat the child-specific questions (age and malnutrition)
+for EACH child under five in sequence.
+
+---
 
 ## Q1: Number of Children
 "How many children under five years old live in your household?"
 
-## Q2: First Child Age
-"Please tell me the age in months of the first child under five."
+---
 
-## Q3: First Child Malnutrition
-"Has the first child shown signs of malnutrition, like weight loss or not growing well?"
+## Child Age (repeat for each child i)
+"Please tell me the age in months of this child under five."
 
-## Q4: Second Child Age
-"Please tell me the age in months of the second child under five. If there is no second child, say 'No second child'."
+---
 
-## Q5: Second Child Malnutrition
-"Has the second child shown signs of malnutrition, like weight loss or not growing well? If there is no second child, say 'No second child'."
+## Child Malnutrition (repeat for each child i)
+"Has this child shown signs of malnutrition, like weight loss or not growing well?"
 
-## Q6: Household Members
+---
+
+## Household Vulnerability
 "Are there any elderly or immunocompromised members in your household?"
 
-## Q7: Caregiver
+---
+
+## Caregiver
 "Who mainly takes care of the small children during the day?"
