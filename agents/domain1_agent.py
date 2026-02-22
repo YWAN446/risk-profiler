@@ -1,7 +1,16 @@
 """
 Pydantic AI Agent for Domain 1: Demographics & Vulnerability Factors Survey
+N-children support using template questions from prompts/survey_questions.md
+
+Expected survey_questions.md (parsed by load_questions) contains at least 5 quoted lines:
+0) Q1: number of children under five
+1) Child age template question (generic "this child" wording)
+2) Child malnutrition template question (generic "this child" wording)
+3) Household vulnerability question (elderly/immunocompromised)
+4) Caregiver question
 """
 import sys
+import re
 from pathlib import Path
 from typing import Optional
 
@@ -16,15 +25,48 @@ from util import (
     get_extraction_system_prompt,
     get_validation_system_prompt,
     load_questions,
-    extract_int_0_2,
 )
 
 # Load questions from external file
 QUESTIONS = load_questions()
+assert len(QUESTIONS) >= 5, f"Expected at least 5 questions, got {len(QUESTIONS)}"
 
-assert len(QUESTIONS) == 7, f"Expected 7 questions, got {len(QUESTIONS)}"
+
+# -----------------------------
+# Helpers for dynamic questions
+# -----------------------------
+def extract_nonneg_int(text: str, max_n: int = 20) -> Optional[int]:
+    """Extract a non-negative integer from free text. Return None if not found/out of range."""
+    m = re.search(r"\b(\d+)\b", str(text or ""))
+    if not m:
+        return None
+    n = int(m.group(1))
+    if 0 <= n <= max_n:
+        return n
+    return None
 
 
+def ordinal_word(i: int) -> str:
+    """1->first, 2->second, 3->third, 4->fourth..."""
+    mapping = {1: "first", 2: "second", 3: "third", 4: "fourth", 5: "fifth"}
+    return mapping.get(i, f"{i}th")
+
+
+def label_child_question(template: str, child_i: int) -> str:
+    """
+    Lightly label a generic template question for the i-th child, without relying on
+    'first/second' being present in the template.
+    Example:
+      template: "Please tell me the age in months of this child under five."
+      -> "For the third child: Please tell me the age in months of this child under five."
+    """
+    ordw = ordinal_word(child_i)
+    return f"For the {ordw} child: {template}"
+
+
+# -----------------------------
+# Agents
+# -----------------------------
 def get_conversation_agent() -> Agent:
     """Get the conversational agent (returns text, not structured data)"""
     return Agent(
@@ -54,54 +96,49 @@ def get_validation_agent() -> Agent:
     )
 
 
+# -----------------------------
+# Main Survey Runner
+# -----------------------------
 async def run_domain1_survey() -> Optional[Domain1Data]:
     """Run the Domain 1 survey interactively via command line."""
     validation_agent = get_validation_agent()
     extraction_agent = get_extraction_agent()
     deps = Domain1SurveyDeps()
-    num_questions = len(QUESTIONS)
+
+    # Base questions from survey_questions.md (templates)
+    q1 = QUESTIONS[0]
+    child_age_template = QUESTIONS[1]
+    child_mal_template = QUESTIONS[2]
+    household_vuln_q = QUESTIONS[3]
+    caregiver_q = QUESTIONS[4]
+
+    # Runtime questions expand after Q1
+    questions_runtime = [q1]
+    num_questions = len(questions_runtime)
+
+    q_idx = 0
+    followup_used = [False] * num_questions
+    n_children: Optional[int] = None
+
+    def record_na(idx: int, reason: str):
+        deps.conversation_history.append(
+            f"System: Question recorded as NA. Q{idx+1}: {questions_runtime[idx]} | Reason: {reason}"
+        )
+
+    async def ask_question(idx: int):
+        q_text = f'"{questions_runtime[idx]}"'
+        deps.conversation_history.append(f"Agent: {q_text}")
+        print(f"Agent: {q_text}\n")
 
     print("=" * 60)
     print("DOMAIN 1: Demographics & Vulnerability Factors Survey")
     print("=" * 60)
     print()
 
-    greet_q1 = f'Hello, thank you for participating in our survey today. "{QUESTIONS[0]}"'
-    deps.conversation_history.append(f"Agent: {greet_q1}")
-    print(f"Agent: {greet_q1}\n")
-
-    q_idx = 0
-    followup_used = [False] * num_questions
-    n_children: Optional[int] = None
-
-    def should_skip(idx: int) -> bool:
-        if idx == 0 or n_children is None:
-            return False
-        if n_children == 0 and idx in (1, 2, 3, 4):
-            return True
-        if n_children == 1 and idx in (3, 4):
-            return True
-        return False
-
-    def record_na(idx: int, reason: str):
-        deps.conversation_history.append(
-            f"System: Question recorded as NA. Q{idx+1}: {QUESTIONS[idx]} | Reason: {reason}"
-        )
-
-    async def ask_question(idx: int):
-        q_text = f'"{QUESTIONS[idx]}"'
-        deps.conversation_history.append(f"Agent: {q_text}")
-        print(f"Agent: {q_text}\n")
+    # Ask Q1 upfront
+    await ask_question(0)
 
     while q_idx < num_questions:
-        if should_skip(q_idx):
-            record_na(q_idx, f"Not applicable given num_children_under_5={n_children}")
-            followup_used[q_idx] = False
-            q_idx += 1
-            if q_idx < num_questions and not should_skip(q_idx):
-                await ask_question(q_idx)
-            continue
-
         try:
             user_input = input("You: ").strip()
             if not user_input:
@@ -112,13 +149,15 @@ async def run_domain1_survey() -> Optional[Domain1Data]:
 
         deps.conversation_history.append(f"Respondent: {user_input}")
 
+        # Validate answer
         vd = await validation_agent.run(
-            f'question_asked: "{QUESTIONS[q_idx]}"\n'
+            f'question_asked: "{questions_runtime[q_idx]}"\n'
             f"respondent_answer: {user_input}\n"
             f"followup_used: {str(followup_used[q_idx]).lower()}"
         )
         decision: ValidationDecision = vd.response
 
+        # Need follow-up
         if decision.status == "NEED_FOLLOWUP":
             followup_used[q_idx] = True
             followup_text = (decision.followup or "Could you please clarify?").strip()
@@ -126,28 +165,48 @@ async def run_domain1_survey() -> Optional[Domain1Data]:
             print(f"Agent: {followup_text}\n")
             continue
 
+        # Give up after 1 follow-up
         if decision.status == "GIVE_UP":
             record_na(q_idx, "Unclear after 1 follow-up")
             followup_used[q_idx] = False
             q_idx += 1
-            while q_idx < num_questions and should_skip(q_idx):
-                record_na(q_idx, f"Not applicable given num_children_under_5={n_children}")
-                q_idx += 1
             if q_idx < num_questions:
                 await ask_question(q_idx)
             continue
 
+        # Accept answer
         followup_used[q_idx] = False
-        if q_idx == 0:
-            n_children = extract_int_0_2(user_input)
 
+        # After Q1, expand child questions
+        if q_idx == 0:
+            n_children = extract_nonneg_int(user_input, max_n=20)
+
+            # Build runtime questions based on n_children
+            new_questions = [q1]
+
+            if n_children is None:
+                # Should be caught by validator, but keep safe fallback
+                n_children = 0
+
+            # Repeat child questions for each child
+            for i in range(1, n_children + 1):
+                new_questions.append(label_child_question(child_age_template, i))
+                new_questions.append(label_child_question(child_mal_template, i))
+
+            # Then household vulnerability + caregiver
+            new_questions.append(household_vuln_q)
+            new_questions.append(caregiver_q)
+
+            questions_runtime = new_questions
+            num_questions = len(questions_runtime)
+            followup_used = [False] * num_questions
+
+        # Move to next question
         q_idx += 1
-        while q_idx < num_questions and should_skip(q_idx):
-            record_na(q_idx, f"Not applicable given num_children_under_5={n_children}")
-            q_idx += 1
         if q_idx < num_questions:
             await ask_question(q_idx)
 
+    # Finish
     deps.conversation_history.append("Agent: SURVEY_COMPLETE")
     print("Agent: SURVEY_COMPLETE\n")
     print("=" * 60)
