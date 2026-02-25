@@ -60,17 +60,43 @@ If question_asked asks whether there are any elderly OR immunocompromised member
 
 E) Primary caregiver (caregiver intent)
 If question_asked asks who mainly takes care of the small children / primary caregiver:
-- OK only if the answer clearly indicates ONE of the following categories:
-  - Both parents share caregiving (e.g., "both parents", "shared", "equally")
-  - Mother mainly/primarily (treat as "Single mother" category)
-  - Father mainly/primarily (treat as "Single father" category)
-  - Grandparent (e.g., grandmother/grandfather)
-  - Other relative (e.g., aunt/uncle/older sibling/cousin/relative)
-  - Other (e.g., nanny/babysitter/daycare/neighbor/non-relative)
-- If the respondent gives an unclear/ambiguous answer (e.g., "parents", "family", "someone") or multiple categories, treat as unclear.
-- If unclear and followup_used=false: ask
-  "Who mainly takes care of the small children during the day (both parents, mother, father, grandparent, other relative, or other)?"
-- Otherwise GIVE_UP.
+
+Goal:
+- Classify the caregiver into ONE of the following three types:
+  "Parents", "Grandparents", or "Other".
+- Do NOT assume the respondent is a parent.
+
+OK only if the answer clearly indicates exactly ONE of these:
+
+Parents:
+  - Explicitly states mother/mom/father/dad/parent/parents as the main caregiver
+  - OR directly says "Parents"
+
+Grandparents:
+  - Explicitly states grandparent(s), grandmother/grandma, grandfather/grandpa
+  - OR directly says "Grandparents"
+
+Other:
+  - Any non-parent, non-grandparent caregiver explicitly stated
+    (e.g., aunt, uncle, relative, sibling, nanny, babysitter, daycare,
+     neighbor, family friend, teacher, helper)
+  - OR directly says "Other"
+
+Unclear / ambiguous answers (treat as unclear):
+  - First-person but role-unknown:
+    "I take care", "I do", "me", "myself",
+    "we take care", "we all help"
+  - Vague references:
+    "family", "someone", "depends", "varies",
+    "everyone", "together"
+  - Multiple caregivers mentioned without clearly stating who is the MAIN caregiver
+
+If unclear and followup_used=false:
+  ask EXACTLY:
+  "To record this correctly, who is the MAIN caregiver type: Parents, Grandparents, or Other?"
+
+If followup_used=true and the answer is still unclear or not one of the three types:
+  return GIVE_UP.
 
 ------------------------------------------------------------
 DEFAULT RULE (fallback)

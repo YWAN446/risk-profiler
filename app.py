@@ -77,18 +77,18 @@ class SurveySession:
         """Extract structured data from conversation"""
         extraction_agent = get_extraction_agent()
         conversation_text = "\n".join(self.deps.conversation_history)
-    
+
         result = await extraction_agent.run(
             f"Extract the household data from this conversation:\n\n{conversation_text}"
         )
-        
+
         answers: dict = result.output or {}
-    
+
         self.result_data = Domain1Data.from_answers(
             answers,
             strict_len=False
         )
-    
+
         self._save_results()
 
     def _save_results(self):
@@ -132,7 +132,7 @@ class SurveySession:
 | Total Children Under 5 | {total_children} |
 | High-Risk Age Children (6-23 months) | {high_risk} |
 | Children with Malnutrition Signs | {malnourished} |
-| Single-Parent Household | {single_parent} |
+| Primary Caregiver | {caregiver_type} |
 | Vulnerable Members Present | {vulnerable} |
 
 ---
@@ -147,7 +147,7 @@ Domain Weight: {weight:.0%} | Weighted Score: {weighted:.2f}
             total_children=summary["total_children"],
             high_risk=summary["high_risk_age_children"],
             malnourished=summary["malnourished_children"],
-            single_parent="Yes" if summary["single_parent_household"] else "No",
+            caregiver_type=summary.get("primary_caregiver_type", "Unknown"),
             vulnerable="Yes" if summary["vulnerable_members_present"] else "No",
             score=summary["overall_vulnerability_score"],
             weight=summary["domain_weight"],
@@ -158,10 +158,14 @@ Domain Weight: {weight:.0%} | Weighted Score: {weighted:.2f}
         if self.result_data.children:
             message += "**Individual Child Vulnerability Scores:**\n\n"
             for i, child in enumerate(self.result_data.children, 1):
-                message += f"- **Child {i}**: {child.age_months} months ({child.age_range.value})"
-                if child.has_malnutrition_signs:
+                age_months = child.age_months if child.age_months is not None else "null"
+                age_range = child.age_range.value if child.age_range is not None else "Unknown"
+                score = child.vulnerability_score if child.vulnerability_score is not None else 0.0
+
+                message += f"- **Child {i}**: {age_months} months ({age_range})"
+                if child.has_malnutrition_signs is True:
                     message += " - Malnutrition signs present"
-                message += f" - Score: {child.vulnerability_score:.2f}\n"
+                message += f" - Score: {score:.2f}\n"
 
         message += "\n\n*Results have been saved. Click 'New Survey' to start again.*"
 
