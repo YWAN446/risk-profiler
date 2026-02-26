@@ -11,6 +11,40 @@ from pydantic import BaseModel, Field
 
 
 # =========================================================
+# SMALL HELPERS
+# =========================================================
+
+_NA_STRINGS = {"na", "n/a", "null", "none", "unknown", ""}
+
+
+def _to_int_or_none(x: Any) -> Optional[int]:
+    if x is None:
+        return None
+    s = str(x).strip()
+    if s.lower() in _NA_STRINGS:
+        return None
+    try:
+        return int(s)
+    except Exception:
+        return None
+
+
+def _to_bool_or_none(x: Any) -> Optional[bool]:
+    if x is None:
+        return None
+    if isinstance(x, bool):
+        return x
+    v = str(x).strip().lower()
+    if v in {"1", "true", "t", "yes", "y"}:
+        return True
+    if v in {"0", "false", "f", "no", "n"}:
+        return False
+    if v in _NA_STRINGS:
+        return None
+    return None
+
+
+# =========================================================
 # ENUMS
 # =========================================================
 
@@ -22,27 +56,63 @@ class ChildAgeRange(str, Enum):
 
 
 class CaregiverType(str, Enum):
-    BOTH_PARENTS = "Both parents"
-    SINGLE_MOTHER = "Single mother"
-    SINGLE_FATHER = "Single father"
-    GRANDPARENT = "Grandparent"
-    OTHER_RELATIVE = "Other relative"
+    """
+    3-level caregiver type used across Domain 1:
+    - Parents / Grandparents / Other / Unknown
+    IMPORTANT: Do NOT infer "Parents" from first-person statements like "I take care"
+    unless mother/father/parent is explicitly stated.
+    """
+    PARENTS = "Parents"
+    GRANDPARENTS = "Grandparents"
     OTHER = "Other"
     UNKNOWN = "Unknown"
 
     @staticmethod
     def from_llm_value(v: Any) -> "CaregiverType":
-        s = str(v or "").strip()
-        mapping = {
-            "Both parents": CaregiverType.BOTH_PARENTS,
-            "Single mother": CaregiverType.SINGLE_MOTHER,
-            "Single father": CaregiverType.SINGLE_FATHER,
-            "Grandparent": CaregiverType.GRANDPARENT,
-            "Other relative": CaregiverType.OTHER_RELATIVE,
-            "Other": CaregiverType.OTHER,
-            "Unknown": CaregiverType.UNKNOWN,
-        }
-        return mapping.get(s, CaregiverType.UNKNOWN)
+        s = str(v or "").strip().lower()
+
+        if s in _NA_STRINGS:
+            return CaregiverType.UNKNOWN
+
+        # already canonical
+        if s == "parents":
+            return CaregiverType.PARENTS
+        if s == "grandparents":
+            return CaregiverType.GRANDPARENTS
+        if s == "other":
+            return CaregiverType.OTHER
+        if s == "unknown":
+            return CaregiverType.UNKNOWN
+
+        # Parents: require explicit parent role words (NO first-person inference)
+        parent_keywords = [
+            "parent", "parents",
+            "mom", "mother", "mum",
+            "dad", "father",
+        ]
+        if any(k in s for k in parent_keywords):
+            return CaregiverType.PARENTS
+
+        # Grandparents: explicit grandparent role words
+        grand_keywords = [
+            "grandparent", "grandparents",
+            "grandma", "grandmother",
+            "grandpa", "grandfather",
+        ]
+        if any(k in s for k in grand_keywords):
+            return CaregiverType.GRANDPARENTS
+
+        # Other: explicit non-parent, non-grandparent caregiver words
+        other_keywords = [
+            "nanny", "babysitter", "daycare", "nursery",
+            "aunt", "uncle", "sister", "brother",
+            "neighbor", "family friend", "relative", "caregiver",
+            "helper", "teacher",
+        ]
+        if any(k in s for k in other_keywords):
+            return CaregiverType.OTHER
+
+        return CaregiverType.UNKNOWN
 
 
 # =========================================================
@@ -101,40 +171,6 @@ class ValidationDecision(BaseModel):
 
 
 # =========================================================
-# SMALL HELPERS
-# =========================================================
-
-_NA_STRINGS = {"na", "n/a", "null", "none", "unknown", ""}
-
-
-def _to_int_or_none(x: Any) -> Optional[int]:
-    if x is None:
-        return None
-    s = str(x).strip()
-    if s.lower() in _NA_STRINGS:
-        return None
-    try:
-        return int(s)
-    except Exception:
-        return None
-
-
-def _to_bool_or_none(x: Any) -> Optional[bool]:
-    if x is None:
-        return None
-    if isinstance(x, bool):
-        return x
-    v = str(x).strip().lower()
-    if v in {"1", "true", "t", "yes", "y"}:
-        return True
-    if v in {"0", "false", "f", "no", "n"}:
-        return False
-    if v in _NA_STRINGS:
-        return None
-    return None
-
-
-# =========================================================
 # MAIN DOMAIN MODEL
 # =========================================================
 
@@ -159,18 +195,21 @@ class Domain1Data(BaseModel):
 
     @property
     def overall_vulnerability_score(self) -> float:
-        scores = [c.vulnerability_score for c in self.children if c.vulnerability_score is not None]
+        scores = [
+            c.vulnerability_score for c in self.children
+            if c.vulnerability_score is not None
+        ]
         if not scores:
             return 0.0
 
         avg_child_score = sum(scores) / len(scores)
         household_multiplier = 1.0
 
-        if self.primary_caregiver in (
-            CaregiverType.SINGLE_MOTHER,
-            CaregiverType.SINGLE_FATHER,
-        ):
-            household_multiplier *= 1.15
+        # Optional: light multiplier for non-parent caregiving (tunable)
+        if self.primary_caregiver == CaregiverType.GRANDPARENTS:
+            household_multiplier *= 1.05
+        elif self.primary_caregiver == CaregiverType.OTHER:
+            household_multiplier *= 1.10
 
         has_vuln = self.has_vulnerable_members
         if has_vuln is None:
@@ -213,8 +252,7 @@ class Domain1Data(BaseModel):
             "total_children": self.num_children_under_5,
             "high_risk_age_children": len(high_risk_age_children),
             "malnourished_children": len(malnourished_children),
-            "single_parent_household": self.primary_caregiver
-            in (CaregiverType.SINGLE_MOTHER, CaregiverType.SINGLE_FATHER),
+            "primary_caregiver_type": self.primary_caregiver.value,
             "vulnerable_members_present": vulnerable_members_present,
             "overall_vulnerability_score": self.overall_vulnerability_score,
             "weighted_score": round(
@@ -248,10 +286,9 @@ class Domain1Data(BaseModel):
                     )
                 )
 
+                # Keep entries even if only one field is present
                 if age is not None or mal is not None:
-                    children.append(
-                        ChildInfo(age_months=age, has_malnutrition_signs=mal)
-                    )
+                    children.append(ChildInfo(age_months=age, has_malnutrition_signs=mal))
 
         # -------------------------
         # Fallback: flat keys
@@ -268,9 +305,7 @@ class Domain1Data(BaseModel):
                 mal = _to_bool_or_none(answers.get(f"child{i}_malnutrition"))
 
                 if age is not None or mal is not None:
-                    children.append(
-                        ChildInfo(age_months=age, has_malnutrition_signs=mal)
-                    )
+                    children.append(ChildInfo(age_months=age, has_malnutrition_signs=mal))
 
         # -------------------------
         # Number of children
@@ -290,9 +325,12 @@ class Domain1Data(BaseModel):
         has_elderly = _to_bool_or_none(answers.get("has_elderly_members"))
         has_immuno = _to_bool_or_none(answers.get("has_immunocompromised_members"))
 
-        caregiver = CaregiverType.from_llm_value(
-            answers.get("primary_caregiver", answers.get("caregiver"))
+        raw_cg = (
+            answers.get("primary_caregiver")
+            or answers.get("caregiver")
+            or answers.get("primary_caregiver_type")
         )
+        caregiver = CaregiverType.from_llm_value(raw_cg)
 
         return cls(
             num_children_under_5=n,
