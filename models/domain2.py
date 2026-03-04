@@ -54,19 +54,27 @@ class WaterSource(str, Enum):
         if s in _NA_STRINGS:
             return WaterSource.UNKNOWN
 
-        # canonical
+        # canonical exact match
         for e in WaterSource:
             if s == e.value.lower():
                 return e
 
         if any(k in s for k in ["piped", "tap", "pipe", "house connection"]):
             return WaterSource.PIPED
+
         if any(k in s for k in ["tubewell", "tube well", "borehole", "handpump", "hand pump", "well pump"]):
             return WaterSource.TUBEWELL
+
         if any(k in s for k in ["protected well", "covered well", "sealed well"]):
             return WaterSource.PROTECTED_WELL
+
+        # ✅ NEW: generic "well" (not tubewell/borehole) -> protected well (closest category we have)
+        if "well" in s and not any(k in s for k in ["tube", "tubewell", "borehole", "handpump", "hand pump", "pump"]):
+            return WaterSource.PROTECTED_WELL
+
         if any(k in s for k in ["river", "pond", "lake", "stream", "surface water", "canal"]):
             return WaterSource.SURFACE_WATER
+
         if s:
             return WaterSource.OTHER
         return WaterSource.UNKNOWN
@@ -140,14 +148,19 @@ class HandwashingStation(str, Enum):
             if s == e.value.lower():
                 return e
 
-        if "soap" in s and any(k in s for k in ["water", "tap", "station", "place"]):
+        # ✅ NEW: if soap mentioned at all, assume soap+water (most robust)
+        # Works for "yes with soap", "soap", "with soap", etc.
+        if "soap" in s:
             return HandwashingStation.SOAP_AND_WATER
+
+        # water-only patterns
         if any(k in s for k in ["water only", "only water", "no soap"]):
             return HandwashingStation.WATER_ONLY
-        if any(k in s for k in ["no", "none", "not have", "don't have", "without", "no designated", "no place"]):
-            # be careful: this only triggers if it's clearly about station
-            if any(k in s for k in ["station", "place", "handwash", "hand wash", "washing hands", "sink", "tap"]):
-                return HandwashingStation.NONE
+
+        # none patterns (since question is explicitly about a handwashing place)
+        if any(k in s for k in ["no", "none", "not have", "don't have", "do not have", "without", "no designated", "no place"]):
+            return HandwashingStation.NONE
+
         return HandwashingStation.UNKNOWN
 
 
@@ -194,7 +207,6 @@ class ValidationDecision(BaseModel):
 # =========================================================
 
 class Domain2Data(BaseModel):
-    # Core fields (aligned to your simplified 5-question design)
     water_source: WaterSource = WaterSource.UNKNOWN
     treats_water: Optional[bool] = None
     water_treatment_method: WaterTreatmentMethod = WaterTreatmentMethod.UNKNOWN
@@ -203,24 +215,14 @@ class Domain2Data(BaseModel):
     handwashing_station: HandwashingStation = HandwashingStation.UNKNOWN
     washes_after_toilet: HandwashFrequency = HandwashFrequency.UNKNOWN
 
-    # -----------------------------------------------------
-    # RISK CALCULATION (simple + tunable)
-    # -----------------------------------------------------
-
     @property
     def domain_weight(self) -> float:
-        # tune later when you combine domains
         return 0.20
 
     @property
     def wash_risk_score(self) -> float:
-        """
-        Returns a 0–10-ish score (higher = worse).
-        Simple additive scoring; stable for MVP and easy to explain.
-        """
         score = 0.0
 
-        # Water source risk
         water_points = {
             WaterSource.PIPED: 0.5,
             WaterSource.TUBEWELL: 1.5,
@@ -231,7 +233,6 @@ class Domain2Data(BaseModel):
         }
         score += water_points.get(self.water_source, 2.0)
 
-        # Treatment risk
         if self.treats_water is False:
             score += 2.5
         elif self.treats_water is True:
@@ -244,10 +245,8 @@ class Domain2Data(BaseModel):
             }
             score += method_points.get(self.water_treatment_method, 1.2)
         else:
-            # unknown treatment status
             score += 1.2
 
-        # Sanitation risk
         toilet_points = {
             ToiletType.FLUSH: 0.5,
             ToiletType.PIT: 2.0,
@@ -258,7 +257,6 @@ class Domain2Data(BaseModel):
         }
         score += toilet_points.get(self.toilet_type, 2.0)
 
-        # Handwashing station risk
         station_points = {
             HandwashingStation.SOAP_AND_WATER: 0.2,
             HandwashingStation.WATER_ONLY: 1.5,
@@ -267,7 +265,6 @@ class Domain2Data(BaseModel):
         }
         score += station_points.get(self.handwashing_station, 1.5)
 
-        # Handwashing behavior risk (after toilet)
         freq_points = {
             HandwashFrequency.ALWAYS: 0.2,
             HandwashFrequency.SOMETIMES: 1.2,
@@ -278,10 +275,6 @@ class Domain2Data(BaseModel):
         score += freq_points.get(self.washes_after_toilet, 1.5)
 
         return round(score, 2)
-
-    # -----------------------------------------------------
-    # SUMMARY
-    # -----------------------------------------------------
 
     def get_risk_summary(self) -> dict:
         return {
@@ -297,16 +290,8 @@ class Domain2Data(BaseModel):
             "weighted_score": round(self.wash_risk_score * self.domain_weight, 2),
         }
 
-    # -----------------------------------------------------
-    # BUILDER
-    # -----------------------------------------------------
-
     @classmethod
     def from_answers(cls, answers: Dict[str, Any]):
-        """
-        Accepts messy extraction output dict from LLM and normalizes values.
-        Supports a few alias keys to be robust.
-        """
         ws = answers.get("water_source", answers.get("drinking_water_source"))
         tw = answers.get("treats_water", answers.get("water_treatment", answers.get("treat_water")))
         wtm = answers.get("water_treatment_method", answers.get("treatment_method", answers.get("water_method")))
@@ -323,3 +308,6 @@ class Domain2Data(BaseModel):
             handwashing_station=HandwashingStation.from_llm_value(hs),
             washes_after_toilet=HandwashFrequency.from_llm_value(wat),
         )
+
+
+        
