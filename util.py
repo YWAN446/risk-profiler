@@ -3,7 +3,7 @@ Utility functions for the Risk Profiler application
 """
 import re
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Any, Dict
 
 
 # Path to prompts directory
@@ -70,3 +70,50 @@ def extract_int_0_2(text: str) -> Optional[int]:
         return 0
 
     return None
+
+def coerce_model_output_to_dict(obj: Any) -> Dict[str, Any]:
+    """
+    Convert pydantic_ai outputs to a plain dict.
+
+    Handles:
+    - dict
+    - ModelResponse with ToolCallPart(args='...json...')
+    - objects with .text containing JSON
+    """
+
+    # Already a dict
+    if isinstance(obj, dict):
+        return obj
+
+    # Case 1: ModelResponse with tool calls
+    if hasattr(obj, "parts") and obj.parts:
+        for part in obj.parts:
+            if hasattr(part, "args"):
+                try:
+                    payload = json.loads(part.args)
+
+                    # Some models wrap inside {"response": {...}}
+                    if isinstance(payload, dict):
+                        if "response" in payload and isinstance(payload["response"], dict):
+                            return payload["response"]
+                        return payload
+                except Exception:
+                    continue
+
+    # Case 2: fallback to .text JSON
+    text = getattr(obj, "text", None)
+    if isinstance(text, str) and text.strip():
+        t = text.strip()
+        start = t.find("{")
+        end = t.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            try:
+                payload = json.loads(t[start:end+1])
+                if isinstance(payload, dict):
+                    if "response" in payload and isinstance(payload["response"], dict):
+                        return payload["response"]
+                    return payload
+            except Exception:
+                pass
+
+    return {}

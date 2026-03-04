@@ -97,7 +97,7 @@ def get_validation_agent() -> Agent:
 
 
 # -----------------------------
-# Main Survey Runner
+# Main Survey Runner (CLI)
 # -----------------------------
 async def run_domain1_survey() -> Optional[Domain1Data]:
     """Run the Domain 1 survey interactively via command line."""
@@ -149,7 +149,7 @@ async def run_domain1_survey() -> Optional[Domain1Data]:
 
         deps.conversation_history.append(f"Respondent: {user_input}")
 
-        # Validate answer
+        # Validate answer (validator now handles caregiver conservatively)
         vd = await validation_agent.run(
             f'question_asked: "{questions_runtime[q_idx]}"\n'
             f"respondent_answer: {user_input}\n"
