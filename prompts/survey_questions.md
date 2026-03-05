@@ -28,4 +28,4 @@ for EACH child under five in sequence.
 ---
 
 ## Caregiver
-"Who mainly takes care of the small children during the day?"
+"Who mainly takes care of the small children during the day? Please describe who the main caregiver is (for example: mother, father, grandparent, nanny, daycare, etc.)."
